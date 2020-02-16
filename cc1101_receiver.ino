@@ -30,7 +30,7 @@ const byte CC1101_FIFOTHR{ 0x03 };
 const byte CC1101_SYNC1{ 0x04 };
 const byte CC1101_SYNC0{ 0x05 };
 const byte CC1101_PKTLEN{ 0x06 };
-const byte CC1101_PKTCRTL1{ 0x07 };
+const byte CC1101_PKTCTRL1{ 0x07 };
 const byte CC1101_PKTCTRL0{ 0x08 };
 const byte CC1101_ADDR{ 0x09 };
 const byte CC1101_CHANNR{ 0x0A };
@@ -107,15 +107,16 @@ void PinSetup()
     //      GND GND
 
     // --------------------------------------------------
-    // Подключение arduino - cc1101
-    //      VCC (3.3v) -   VCC (3.3v)
-    //      GND -          GND
-    //      PIN_SPI_SS -   CSN
-    //      PIN_SPI_MOSI - SI
-    //      PIN_SPI_MISO - SO
-    //      PIN_SPI_SS -   SCK
-    //      PIN_CC_GDO0 -  GD0
-    //      PIN_CC_GDO2 -  GD2
+    // Подключение
+    //      arduino             cc1101
+    //      VCC (3.3v)          VCC (3.3v)
+    //      GND                 GND
+    //      PIN_SPI_SS (10)     CSN
+    //      PIN_SPI_MOSI (11)   SI
+    //      PIN_SPI_MISO (12)   SO
+    //      PIN_SPI_SCK (13)    SCK
+    //      PIN_CC_GDO0 (3)     GD0
+    //      PIN_CC_GDO2 (2)     GD2
 }
 
 struct registerSetting_t
@@ -124,26 +125,50 @@ struct registerSetting_t
     byte data;
 };
 
+// Address Config = No address check 
+// Base Frequency = 433.899994 
+// CRC Autoflush = false 
+// CRC Enable = false 
+// Carrier Frequency = 433.899994 
+// Channel Number = 0 
+// Channel Spacing = 25.390625 
+// Data Format = Asynchronous serial mode 
+// Data Rate = 3.79372 
+// Deviation = 2.380371 
+// Device Address = 0 
+// Manchester Enable = true 
+// Modulation Format = ASK/OOK 
+// PA Ramping = false 
+// Packet Length = 255 
+// Packet Length Mode = Infinite packet length mode 
+// Preamble Count = 4 
+// RX Filter BW = 203.125000 
+// Sync Word Qualifier Mode = No preamble/sync 
+// TX Power = 0 
+// Whitening = false 
 
 static const registerSetting_t preferredSettings[] =
 {
   {CC1101_IOCFG2,      0x0D},
-  {CC1101_IOCFG0,      0x00},
+  {CC1101_IOCFG0,      0x40},
   {CC1101_FIFOTHR,     0x47},
-  {CC1101_PKTCTRL0,    0x06},
-  {CC1101_CHANNR,      0x05},
+  {CC1101_PKTCTRL0,    0x32},
   {CC1101_FSCTRL1,     0x06},
   {CC1101_FREQ2,       0x10},
   {CC1101_FREQ1,       0xB0},
   {CC1101_FREQ0,       0x3F},
-  {CC1101_MDMCFG4,     0xE6},
-  {CC1101_MDMCFG3,     0x93},
-  {CC1101_MDMCFG2,     0x34},
-  {CC1101_MDMCFG0,     0xF7},
-  {CC1101_DEVIATN,     0x14},
+  {CC1101_MDMCFG4,     0x87},
+  {CC1101_MDMCFG3,     0x32},
+  {CC1101_MDMCFG2,     0xB8},
+  {CC1101_MDMCFG1,     0x20},
+  {CC1101_MDMCFG0,     0x00},
+  {CC1101_DEVIATN,     0x04},
   {CC1101_MCSM0,       0x18},
   {CC1101_FOCCFG,      0x16},
+  {CC1101_AGCCTRL2,    0x07},
+  {CC1101_AGCCTRL1,    0x00},
   {CC1101_WORCTRL,     0xFB},
+  {CC1101_FREND1,      0xB6},
   {CC1101_FREND0,      0x11},
   {CC1101_FSCAL3,      0xE9},
   {CC1101_FSCAL2,      0x2A},
@@ -181,9 +206,21 @@ void CC1101WriteByte(const byte& address, const byte& data)
     CC1101EndTransaction();
 }
 
+byte CC1101ReadByte(const byte& address)
+{
+    CC1101BeginTransaction();
+    SPI.transfer(address | 0xC0); // +0xC0 - read burst
+    byte result{ SPI.transfer(0) };
+    CC1101EndTransaction();
+    return result;
+}
+
 void CC1101Read()
 {
-    Serial.println("CC1101Read()");
+	Serial.println(CC1101ReadByte(0x3F), HEX);
+
+    // Очистить буфер RX FIFO.
+    CC1101CommandStrobe(SFRX);
 }
 
 byte CC1101CommandStrobe(const byte& command)
@@ -204,6 +241,16 @@ void CC1101SetupReceiver()
     for (int i = 0; i < cc1101_config_size; i++)
         CC1101WriteByte(preferredSettings[i].address, preferredSettings[i].data);
 
+    // Задаем форму сигналов
+    CC1101BeginTransaction();
+    // 0x7E: Burst access to PATABLE
+    SPI.transfer(0x3E | 0x40);
+    // "0" - нет сигнала
+    SPI.transfer(0x00);
+    // "1" - сигнал есть
+    SPI.transfer(0x60);
+    CC1101EndTransaction();
+
     // Настроить прерывание
     attachInterrupt(0, CC1101Read, CHANGE); 
 
@@ -213,8 +260,8 @@ void CC1101SetupReceiver()
 
 void setup() 
 {
+    Serial.begin(57600);
     PinSetup();
-    Serial.begin(9600);
     CC1101SetupReceiver();
 }
 
