@@ -71,6 +71,10 @@ const byte CC1101_TEST2{ 0x2C };
 const byte CC1101_TEST1{ 0x2D };
 const byte CC1101_TEST0{ 0x2E };
 
+byte rx_fifo[0x100] = {};
+uint8_t rx_fifo_begin{ 0 };
+uint8_t rx_fifo_end{ 0 };
+
 void PinSetup()
 {
     // --------------------------------------------------
@@ -132,34 +136,38 @@ struct registerSetting_t
 // Carrier Frequency = 433.899994 
 // Channel Number = 0 
 // Channel Spacing = 25.390625 
-// Data Format = Asynchronous serial mode 
+// Data Format = Normal mode 
 // Data Rate = 3.79372 
 // Deviation = 2.380371 
 // Device Address = 0 
-// Manchester Enable = true 
+// Manchester Enable = false 
 // Modulation Format = ASK/OOK 
 // PA Ramping = false 
-// Packet Length = 255 
-// Packet Length Mode = Infinite packet length mode 
+// Packet Length = 62 
+// Packet Length Mode = Fixed packet length mode. Length configured in PKTLEN register 
 // Preamble Count = 4 
-// RX Filter BW = 203.125000 
+// RX Filter BW = 101.562500 
 // Sync Word Qualifier Mode = No preamble/sync 
 // TX Power = 0 
 // Whitening = false 
 
 static const registerSetting_t preferredSettings[] =
 {
-  {CC1101_IOCFG2,      0x0D},
-  {CC1101_IOCFG0,      0x40},
-  {CC1101_FIFOTHR,     0x47},
-  {CC1101_PKTCTRL0,    0x32},
+  {CC1101_IOCFG2,      0x01},
+  {CC1101_IOCFG0,      0x00},
+  {CC1101_FIFOTHR,     0x4F},
+  {CC1101_SYNC1,       0xFF},
+  {CC1101_SYNC0,       0xFF},
+  {CC1101_PKTLEN,      0x3E},
+  {CC1101_PKTCTRL1,    0x20},
+  {CC1101_PKTCTRL0,    0x00},
   {CC1101_FSCTRL1,     0x06},
   {CC1101_FREQ2,       0x10},
   {CC1101_FREQ1,       0xB0},
   {CC1101_FREQ0,       0x3F},
-  {CC1101_MDMCFG4,     0x87},
+  {CC1101_MDMCFG4,     0xC7},
   {CC1101_MDMCFG3,     0x32},
-  {CC1101_MDMCFG2,     0xB8},
+  {CC1101_MDMCFG2,     0xB0},
   {CC1101_MDMCFG1,     0x20},
   {CC1101_MDMCFG0,     0x00},
   {CC1101_DEVIATN,     0x04},
@@ -178,6 +186,38 @@ static const registerSetting_t preferredSettings[] =
   {CC1101_TEST1,       0x35},
   {CC1101_TEST0,       0x09},
 };
+
+//static const registerSetting_t preferredSettings[] =
+//{
+//  {CC1101_IOCFG2,      0x0D},
+//  {CC1101_IOCFG0,      0x40},
+//  {CC1101_FIFOTHR,     0x47},
+//  {CC1101_PKTCTRL0,    0x32},
+//  {CC1101_FSCTRL1,     0x06},
+//  {CC1101_FREQ2,       0x10},
+//  {CC1101_FREQ1,       0xB0},
+//  {CC1101_FREQ0,       0x3F},
+//  {CC1101_MDMCFG4,     0x87},
+//  {CC1101_MDMCFG3,     0x32},
+//  {CC1101_MDMCFG2,     0xB8},
+//  {CC1101_MDMCFG1,     0x20},
+//  {CC1101_MDMCFG0,     0x00},
+//  {CC1101_DEVIATN,     0x04},
+//  {CC1101_MCSM0,       0x18},
+//  {CC1101_FOCCFG,      0x16},
+//  {CC1101_AGCCTRL2,    0x07},
+//  {CC1101_AGCCTRL1,    0x00},
+//  {CC1101_WORCTRL,     0xFB},
+//  {CC1101_FREND1,      0xB6},
+//  {CC1101_FREND0,      0x11},
+//  {CC1101_FSCAL3,      0xE9},
+//  {CC1101_FSCAL2,      0x2A},
+//  {CC1101_FSCAL1,      0x00},
+//  {CC1101_FSCAL0,      0x1F},
+//  {CC1101_TEST2,       0x81},
+//  {CC1101_TEST1,       0x35},
+//  {CC1101_TEST0,       0x09},
+//};
 
 void CC1101BeginTransaction()
 {
@@ -215,12 +255,34 @@ byte CC1101ReadByte(const byte& address)
     return result;
 }
 
+void CC1101ReadBytes(const byte& address, const byte& bytes, byte fifo[], byte& fifo_end)
+{
+    CC1101BeginTransaction();
+    SPI.transfer(address | 0xC0); // +0xC0 - read burst
+    for (byte i{ 0 }; i < bytes; i++)
+        rx_fifo[rx_fifo_end++] = SPI.transfer(0);
+    CC1101EndTransaction();
+}
+
 void CC1101Read()
 {
-	Serial.println(CC1101ReadByte(0x3F), HEX);
+    // Кол-во байт в RX буфере
+    byte bytes{ CC1101ReadByte(0x3B) };
+    Serial.print("rx_fifo[");
+    Serial.print(bytes);
+    Serial.print("] ");
+    
+	CC1101ReadBytes(0x3F, bytes, &rx_fifo[0], rx_fifo_end);
+	while (rx_fifo_begin != rx_fifo_end)
+		Serial.print(rx_fifo[rx_fifo_begin++], HEX);
+
+	Serial.println();
 
     // Очистить буфер RX FIFO.
     CC1101CommandStrobe(SFRX);
+
+    // Enable RX.Perform calibration first if coming from IDLEand MCSM0.FS_AUTOCAL = 1.
+    CC1101CommandStrobe(SRX);
 }
 
 byte CC1101CommandStrobe(const byte& command)
@@ -235,6 +297,12 @@ void CC1101SetupReceiver()
 {
     // Reset chip.
     CC1101CommandStrobe(SRES);
+
+    // Очистить буфер RX FIFO.
+    CC1101CommandStrobe(SFRX);
+
+    // Очистить буфер TX FIFO.
+    CC1101CommandStrobe(SFTX);
 
     // Инициализируем регистры
     uint8_t cc1101_config_size{ sizeof(preferredSettings) / sizeof(preferredSettings[0]) };
@@ -252,7 +320,7 @@ void CC1101SetupReceiver()
     CC1101EndTransaction();
 
     // Настроить прерывание
-    attachInterrupt(0, CC1101Read, CHANGE); 
+    attachInterrupt(0, CC1101Read, RISING);
 
 	// Enable RX.Perform calibration first if coming from IDLEand MCSM0.FS_AUTOCAL = 1.
     CC1101CommandStrobe(SRX);
@@ -265,6 +333,65 @@ void setup()
     CC1101SetupReceiver();
 }
 
+//Выводим состояние CC1101
+void CC1101StatusPrint()
+{
+    Serial.println();
+
+    byte status{ CC1101CommandStrobe(SNOP) };
+
+    //Serial.print("fifo_byte_avaliable: ");
+    //byte fifo_byte_avaliable{ status & B00001111 };
+    //Serial.println(fifo_byte_avaliable);
+
+    Serial.print("state: ");
+    byte state{ (status & B01110000) >> 4 };
+    switch (state)
+    {
+    case B000:
+        Serial.println("IDLE");
+        break;
+
+    case B001:
+        Serial.println("RX");
+        break;
+
+    case B010:
+        Serial.println("TX");
+        break;
+
+    case B011:
+        Serial.println("FSTXON");
+        break;
+
+    case B100:
+        Serial.println("CALIBRATE");
+        break;
+
+    case B101:
+        Serial.println("SETTLING");
+        break;
+
+    case B110:
+        Serial.println("RXFIFO_OVERFLOW");
+        break;
+
+    case B111:
+        Serial.println("TXFIFO_UNDERFLOW");
+        break;
+    }
+
+    // Кол-во байт в RX буфере
+    Serial.print("RX FIFO[");
+    Serial.print(CC1101ReadByte(0x3B));
+    Serial.println("]");
+}
+
 void loop() 
 {
+
+    // Текущее состояние
+    //CC1101StatusPrint();
+
+    delay(1000);
 }
