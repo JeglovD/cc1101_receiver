@@ -137,17 +137,17 @@ struct registerSetting_t
 // Channel Number = 0 
 // Channel Spacing = 25.390625 
 // Data Format = Normal mode 
-// Data Rate = 3.79372 
+// Data Rate = 3.60775 
 // Deviation = 2.380371 
 // Device Address = 0 
 // Manchester Enable = false 
 // Modulation Format = ASK/OOK 
 // PA Ramping = false 
-// Packet Length = 62 
+// Packet Length = 32 
 // Packet Length Mode = Fixed packet length mode. Length configured in PKTLEN register 
 // Preamble Count = 4 
-// RX Filter BW = 101.562500 
-// Sync Word Qualifier Mode = No preamble/sync 
+// RX Filter BW = 81.250000 
+// Sync Word Qualifier Mode = 15/16 sync word bits detected 
 // TX Power = 0 
 // Whitening = false 
 
@@ -157,20 +157,21 @@ static const registerSetting_t preferredSettings[] =
   {CC1101_IOCFG0,      0x00},
   {CC1101_FIFOTHR,     0x4F},
   {CC1101_SYNC1,       0xFF},
-  {CC1101_SYNC0,       0xFF},
-  {CC1101_PKTLEN,      0x3E},
-  {CC1101_PKTCTRL1,    0x20},
+  {CC1101_SYNC0,       0xC0},
+  {CC1101_PKTLEN,      0x20},
+  {CC1101_PKTCTRL1,    0x00},
   {CC1101_PKTCTRL0,    0x00},
   {CC1101_FSCTRL1,     0x06},
   {CC1101_FREQ2,       0x10},
   {CC1101_FREQ1,       0xB0},
   {CC1101_FREQ0,       0x3F},
-  {CC1101_MDMCFG4,     0xC7},
-  {CC1101_MDMCFG3,     0x32},
-  {CC1101_MDMCFG2,     0xB0},
+  {CC1101_MDMCFG4,     0xD7},
+  {CC1101_MDMCFG3,     0x22},
+  {CC1101_MDMCFG2,     0xB1},
   {CC1101_MDMCFG1,     0x20},
   {CC1101_MDMCFG0,     0x00},
   {CC1101_DEVIATN,     0x04},
+  {CC1101_MCSM1,       0x00},
   {CC1101_MCSM0,       0x18},
   {CC1101_FOCCFG,      0x16},
   {CC1101_AGCCTRL2,    0x07},
@@ -274,7 +275,7 @@ void CC1101Read()
     
 	CC1101ReadBytes(0x3F, bytes, &rx_fifo[0], rx_fifo_end);
 	while (rx_fifo_begin != rx_fifo_end)
-		Serial.print(rx_fifo[rx_fifo_begin++], HEX);
+		Serial.print(rx_fifo[rx_fifo_begin++], BIN);
 
 	Serial.println();
 
